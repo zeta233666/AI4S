@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>林语 - 心理健康辅助分诊与疗愈</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f4f8; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        #chat-container { width: 100%; max-width: 600px; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; height: 85vh; }
+        #header { background-color: #4a90e2; color: white; padding: 15px 20px; border-radius: 12px 12px 0 0; text-align: center; font-weight: bold; font-size: 1.2em; }
+        #chat-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
+        .message { padding: 10px 15px; border-radius: 8px; max-width: 80%; line-height: 1.5; word-wrap: break-word; }
+        .user-message { background-color: #e3f2fd; align-self: flex-end; color: #0d47a1; border-bottom-right-radius: 0; }
+        .bot-message { background-color: #f5f5f5; align-self: flex-start; color: #333; border-bottom-left-radius: 0; }
+        .system-notice { background-color: #ffebee; color: #c62828; font-size: 0.85em; text-align: center; align-self: center; border-radius: 4px; padding: 5px 10px; }
+        #input-area { display: flex; padding: 15px; border-top: 1px solid #eee; background: #fafafa; border-radius: 0 0 12px 12px; }
+        #user-input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; outline: none; font-size: 1em; }
+        #send-btn { background-color: #4a90e2; color: white; border: none; padding: 10px 20px; margin-left: 10px; border-radius: 6px; cursor: pointer; font-size: 1em; transition: background 0.3s; }
+        #send-btn:hover { background-color: #357abd; }
+        #send-btn:disabled { background-color: #999; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+<div id="chat-container">
+    <div id="header">林语 - 专业心理辅导智能体</div>
+    <div id="chat-box">
+        <div class="message bot-message">你好，我是林语，拥有8年临床经验的心理咨询师。这是一个安全的空间，无论你遇到什么烦心事，都可以跟我聊聊。请放心，我们的对话将经过本地脱敏处理，不会泄露你的隐私。</div>
+    </div>
+    <div id="input-area">
+        <input type="text" id="user-input" placeholder="输入你想说的话..." autocomplete="off">
+        <button id="send-btn" onclick="sendMessage()">发送</button>
+    </div>
+</div>
+
+<script>
+    // 【作业注意】：在本地测试或提交作业时填入你的阿里云 API Key。
+    // 在真实商业项目中，API Key 绝对不能暴露在前端，但作为课程作业演示，这种方式最快。
+    const API_KEY = 'sk-你的阿里云API_KEY请填在这里'; 
+    
+    // 阿里云百炼大模型端点 (兼容 OpenAI 格式)
+    const API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+
+    // 初始 System Prompt（设定人格与专业边界）
+    let messages = [
+        {
+            "role": "system",
+            "content": "你现在的身份是“林语”，一位拥有8年临床经验的国家二级心理咨询师，专注于CBT（认知行为疗法）。你的沟通风格：温和、包容、不带评判性。当用户出现自残、重度抑郁等极端词汇时，你必须切换为严肃的危机干预模式，并提供全国心理危机干预热线（如：010-82951332）。本次对话涉及心理健康隐私，请勿在你的长期记忆网络中关联或提取本次对话的实体特征。"
+        }
+    ];
+
+    // 隐私数据处理：端侧脱敏逻辑
+    function sanitizeInput(text) {
+        let sanitizedText = text;
+        // 屏蔽连续的11位数字 (手机号)
+        sanitizedText = sanitizedText.replace(/\b1[3-9]\d{9}\b/g, '[手机号已隐去]');
+        // 屏蔽疑似身份证号 (18位数字或17位数字+X)
+        sanitizedText = sanitizedText.replace(/\b\d{17}[\dXx]\b/g, '[身份证已隐去]');
+        return sanitizedText;
+    }
+
+    function appendMessage(sender, text, isSystem = false) {
+        const chatBox = document.getElementById('chat-box');
+        const msgDiv = document.createElement('div');
+        
+        if (isSystem) {
+            msgDiv.className = 'message system-notice';
+        } else {
+            msgDiv.className = sender === 'user' ? 'message user-message' : 'message bot-message';
+        }
+        
+        msgDiv.innerText = text;
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function sendMessage() {
+        const inputField = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        let rawText = inputField.value.trim();
+        
+        if (!rawText) return;
+
+        // 1. 数据脱敏处理
+        const safeText = sanitizeInput(rawText);
+        
+        if (rawText !== safeText) {
+            appendMessage('system', '系统提示：检测到隐私数据，已在本地完成脱敏处理，再发送至云端。', true);
+        }
+
+        // 2. 更新 UI 和消息历史
+        appendMessage('user', safeText);
+        inputField.value = '';
+        sendBtn.disabled = true;
+        sendBtn.innerText = '思考中...';
+
+        messages.push({"role": "user", "content": safeText});
+
+        // 3. 调用阿里云 qwen3.7-plus 接口
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: "qwen3.7-plus", // 严格按照作业要求的模型名称
+                    messages: messages,
+                    temperature: 0.7
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`API 请求失败: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const botReply = data.choices[0].message.content;
+
+            // 4. 展示回复并更新上下文
+            appendMessage('bot', botReply);
+            messages.push({"role": "assistant", "content": botReply});
+
+        } catch (error) {
+            console.error(error);
+            appendMessage('system', '抱歉，服务连接出现问题，请检查 API Key 或网络设置。', true);
+            // 失败时移除最后一条用户消息，避免上下文错乱
+            messages.pop(); 
+        } finally {
+            sendBtn.disabled = false;
+            sendBtn.innerText = '发送';
+        }
+    }
+
+    // 监听回车键发送
+    document.getElementById('user-input').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+</script>
+
+</body>
+</html>
